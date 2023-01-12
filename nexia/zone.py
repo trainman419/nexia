@@ -29,6 +29,7 @@ if TYPE_CHECKING:
 def _get_roomiq(zone_json) -> Any:
     return find_dict_with_keyvalue_in_json(zone_json["features"], "name", "room_iq_sensors")
 
+
 class NexiaThermostatRoomSensor:
     def __init__(self, nexia_home, nexia_thermostat, sensor_json, nexia_zone=None):
         """Create a nexia RoomIQ sensor"""
@@ -38,7 +39,33 @@ class NexiaThermostatRoomSensor:
         self.sensor_id = sensor_json["id"]
         self._sensor_json = sensor_json
 
+    def get_name(self) -> str:
+        """
+        Returns the sensor name
+        :return: str
+        """
+        name = self._sensor_json['name']
+        if name == self._thermostat.get_name():
+            name = "Builtin Sensor"
+        return f"{self._zone.get_name()} {name}"
+
+    def get_temperature(self) -> int:
+        """
+        Returns the temperature of the zone in the temperature unit of the
+        thermostat.
+        :return: int
+        """
+        return self._sensor_json["temperature"]
+
+    def get_humidity(self) -> float:
+        """
+        Returns the humidity of the zone as a float, 0.0 to 1.0.
+        :return: float
+        """
+        return self._sensor_json["humidity"]/100.0
+
     def update_sensor_json(self, sensor_json) -> None:
+        """Update with new json from the api"""
         self._sensor_json.update(sensor_json)
 
 
