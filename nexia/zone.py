@@ -26,6 +26,22 @@ if TYPE_CHECKING:
     from .thermostat import NexiaThermostat
 
 
+def _get_roomiq(zone_json) -> Any:
+    return find_dict_with_keyvalue_in_json(zone_json["features"], "name", "room_iq_sensors")
+
+class NexiaThermostatRoomSensor:
+    def __init__(self, nexia_home, nexia_thermostat, sensor_json, nexia_zone=None):
+        """Create a nexia RoomIQ sensor"""
+        self._nexia_home: NexiaHome = nexia_home
+        self._thermostat: NexiaThermostat = nexia_thermostat
+        self._zone: Optional["NexiaThermostatZone"] = nexia_zone
+        self.sensor_id = sensor_json["id"]
+        self._sensor_json = sensor_json
+
+    def update_sensor_json(self, sensor_json) -> None:
+        self._sensor_json.update(sensor_json)
+
+
 class NexiaThermostatZone:
     """A nexia thermostat zone."""
 
@@ -35,6 +51,11 @@ class NexiaThermostatZone:
         self._zone_json: dict[str, Any] = zone_json
         self.thermostat: NexiaThermostat = nexia_thermostat
         self.zone_id: int = zone_json["id"]
+        self._sensors: list[NexiathermostatRoomSensor] = []
+        if self._has_roomiq:
+            for sensor in _get_roomiq(zone_json)["sensors"]:
+                self._sensors.append(NexiaThermostatRoomSensor(nexia_home, nexia_thermostat,
+                    sensor, self))
 
     @property
     def API_MOBILE_ZONE_URL(self) -> str:  # pylint: disable=invalid-name
@@ -95,6 +116,13 @@ class NexiaThermostatZone:
         :return: int
         """
         return self._get_zone_key("temperature")
+
+    def get_sensors(self) -> list[Any]:
+        """
+        Returns a list of room sensors, if RoomIQ is enabled.
+        :return: list[Any]
+        """
+        return self._sensors
 
     def get_presets(self) -> list[str]:
         """
@@ -505,6 +533,14 @@ class NexiaThermostatZone:
 
         raise KeyError(f'Zone key "{key}" invalid.')
 
+    @property
+    def _has_roomiq(self) -> bool:
+        roomiq_json = _get_roomiq(self._zone_json)
+        if roomiq_json is None:
+            return False
+
+        return roomiq_json.get("should_show", False)
+
     async def _post_and_update_zone_json(
         self, end_point: str, payload: dict[str, Any]
     ) -> None:
@@ -523,3 +559,13 @@ class NexiaThermostatZone:
             self.zone_id,
         )
         self._zone_json.update(zone_json)
+
+        sensor_updates_by_id = {}
+        room_iq_json = _get_roomiq(zone_json)
+        if room_iq_json:
+            for sensor_json in room_iq_json.get("sensors", []):
+                sensor_updates_by_id[sensor_json["id"]] = sensor_json
+
+        for sensor in self._sensors:
+            if sensor.sensor_id in sensor_updates_by_id:
+                sensor.update_sensor_json(sensor_updates_by_id[sensor.sensor_id])
